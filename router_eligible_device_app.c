@@ -559,6 +559,13 @@ uint32_t dataLen
 	  pMySession = COAP_OpenSession(mAppCoapInstId);
 
 	  COAP_AddOptionToList(pMySession,COAP_URI_PATH_OPTION, APP_RESOURCE1_JOINER_URI_PATH,SizeOfString(APP_RESOURCE1_JOINER_URI_PATH));
+	  char addrStr[INET6_ADDRSTRLEN];
+
+	  ntop(AF_INET6, (ipAddr_t*)&pSession->remoteAddrStorage.ss_addr, addrStr, INET6_ADDRSTRLEN);
+	  shell_write("\r");
+
+	  shell_printf("\tFrom Address: %s\n\r", addrStr);
+	  shell_refresh();
 
     if (gCoapConfirmable_c == pSession->msgType)
   {
@@ -649,12 +656,87 @@ uint32_t dataLen
 	  pMySession = COAP_OpenSession(mAppCoapInstId);
 
 	  COAP_AddOptionToList(pMySession,COAP_URI_PATH_OPTION, APP_RESOURCE1_JOINER_ACCEL_URI_PATH,SizeOfString(APP_RESOURCE1_JOINER_ACCEL_URI_PATH));
+	  char addrStr[INET6_ADDRSTRLEN];
 
+	  ntop(AF_INET6, (ipAddr_t*)&pSession->remoteAddrStorage.ss_addr, addrStr, INET6_ADDRSTRLEN);
+	  shell_write("\r");
+
+	  shell_printf("\tFrom Address: %s\n\r", addrStr);
+	  shell_refresh();
   if (gCoapConfirmable_c == pSession->msgType)
 {
   if (gCoapGET_c == pSession->code)
   {
-    shell_write("'CON' packet received 'GET' with payload: ");
+    //shell_write("'CON' packet received 'GET' with payload: ");
+	  //shell_write("'NON' packet received 'GET' with payload: ");
+	    	/* Get new accelerometer data. */
+	    	        if (FXOS_ReadSensorData(&fxosHandle, &sensorData) != kStatus_Success)
+	    	        {
+	    	            return -1;
+	    	        }
+
+	    	        /* Get the X and Y data from the sensor data structure in 14 bit left format data*/
+	    	        xData = (int16_t)((uint16_t)((uint16_t)sensorData.accelXMSB << 8) | (uint16_t)sensorData.accelXLSB) / 4U;
+	    	        yData = (int16_t)((uint16_t)((uint16_t)sensorData.accelYMSB << 8) | (uint16_t)sensorData.accelYLSB) / 4U;
+
+	    	        /* Convert raw data to angle (normalize to 0-90 degrees). No negative angles. */
+	    	        xAngle = (int16_t)floor((double)xData * (double)dataScale * 90 / 8192);
+	    	        if (xAngle < 0)
+	    	        {
+	    	            xAngle *= -1;
+	    	        }
+	    	        yAngle = (int16_t)floor((double)yData * (double)dataScale * 90 / 8192);
+	    	        if (yAngle < 0)
+	    	        {
+	    	            yAngle *= -1;
+	    	        }
+	    	        /* Update angles to turn on LEDs when angles ~ 90 */
+	    	        if (xAngle > ANGLE_UPPER_BOUND)
+	    	        {
+	    	            xAngle = 100;
+	    	        }
+	    	        if (yAngle > ANGLE_UPPER_BOUND)
+	    	        {
+	    	            yAngle = 100;
+	    	        }
+	    	        /* Update angles to turn off LEDs when angles ~ 0 */
+	    	        if (xAngle < ANGLE_LOWER_BOUND)
+	    	        {
+	    	            xAngle = 0;
+	    	        }
+	    	        if (yAngle < ANGLE_LOWER_BOUND)
+	    	        {
+	    	            yAngle = 0;
+	    	        }
+
+	    	        Board_UpdatePwm(xAngle, yAngle);
+
+	    	        /* Print out the raw accelerometer data. */
+	    	        PRINTF("x= %6d y = %6d\r\n", xData, yData);
+
+	  	   pMySession -> msgType=gCoapNonConfirmable_c;
+	  	   pMySession -> code= gCoapPOST_c;
+	  	   pMySession -> pCallback =NULL;
+	  	   FLib_MemCpy(&pMySession->remoteAddrStorage,&gCoapDestAddress,sizeof(ipAddr_t));
+
+	  	   pMySessionPayload[0]=0;
+	  	   pMySessionPayload[1]=0;
+	  	   uint16_t data=(xData & 0xFF);
+	  	   pMySessionPayload[2]=(xData & 0xFF00)>>8;
+	  	   pMySessionPayload[3]=data;
+	  	    data=(yData & 0xFF);
+	  	   pMySessionPayload[4]=(yData & 0xFF00)>>8;
+	  	   pMySessionPayload[5]=data;
+
+
+	  	   coapMsgTypesAndCodes_t coapMessageType = gCoapMsgTypeNonPost_c;
+	  	   COAP_Send(pMySession, coapMessageType, pMySessionPayload, pMyPayloadSize);
+	  	   //COAP_Send(pSession, coapMessageType, pMySessionPayload, pMyPayloadSize);
+	  	   //COAP_Send(pSession, coapMessageType, pTempString, ackPloadSize);
+	  	   shell_write("'NON' packet sent 'POST' with payload: ");
+	  	   shell_writeDec(*pMySessionPayload);
+	  	   shell_write("\r\n");
+
 
   }
   if (gCoapPOST_c == pSession->code)
@@ -755,26 +837,7 @@ else if(gCoapNonConfirmable_c == pSession->msgType)
     shell_write("'NON' packet received 'PUT' with payload: ");
   }
 }
-/*shell_writeDec(*pData);
-shell_write("\r\n");*/
 
-
-/*shell_writeHex(&(gCoapDestAddress.addr16[1]), 2);
-shell_write(":");
-shell_writeHex(&(gCoapDestAddress.addr32[1]), 4);
-shell_write(":");
-shell_writeHex(&(gCoapDestAddress.addr64[1]),  8);
-shell_write(":");
-shell_writeHex(&(gCoapDestAddress.addr8[1]),  1);
-shell_write("\r\n");*/
-
-/*coapMsgTypesAndCodes_t coapMessageType = gCoapMsgTypeNonPost_c;
-COAP_Send(pMySession, coapMessageType, pMySessionPayload, pMyPayloadSize);
-//COAP_Send(pSession, coapMessageType, pMySessionPayload, pMyPayloadSize);
-//COAP_Send(pSession, coapMessageType, pTempString, ackPloadSize);
-shell_write("'NON' packet sent 'POST' with payload: ");
-shell_writeN((char*) pMySessionPayload, pMyPayloadSize);
-shell_write("\r\n");*/
 COAP_CloseSession(pSession);
 }
 
