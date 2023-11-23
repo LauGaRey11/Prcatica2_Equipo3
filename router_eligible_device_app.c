@@ -201,6 +201,7 @@ coapSession_t *pSession,
 uint32_t dataLen
 )
 
+
 {
   static uint8_t pMySessionPayload[3]={0x31,0x32,0x33};
   static uint32_t pMyPayloadSize=3;
