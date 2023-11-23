@@ -81,6 +81,7 @@ Private macros
 #define APP_SINK_URI_PATH                       "/sink"
 #define APP_RESOURCE1_URI_PATH					"/resource1"
 #define APP_RESOURCE2_URI_PATH					"/resource2"
+#define APP_TEAM1_URI_PATH						"/team1"
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
@@ -115,9 +116,6 @@ static void APP_SendLedRgbOn(uint8_t *pParam);
 static void APP_SendLedRgbOff(uint8_t *pParam);
 static void APP_SendLedFlash(uint8_t *pParam);
 static void APP_SendLedColorWheel(uint8_t *pParam);
-
-static void    MyTimer(void *);
-
 #endif
 static void APP_LocalDataSinkRelease(uint8_t *pParam);
 static void APP_ProcessLedCmd(uint8_t *pCommand, uint8_t dataLen);
@@ -149,10 +147,6 @@ const coapUriPath_t gAPP_RESOURCE2_URI_PATH = {SizeOfString(APP_RESOURCE2_URI_PA
 const coapUriPath_t gAPP_RESET_URI_PATH = {SizeOfString(APP_RESET_TO_FACTORY_URI_PATH), (uint8_t *)APP_RESET_TO_FACTORY_URI_PATH};
 #endif
 
-static uint8_t interfaceId;
-static uint8_t segundos = 1;
-
-
 /* Application state/mode */
 appDeviceState_t gAppDeviceState[THR_MAX_INSTANCES];
 appDeviceMode_t gAppDeviceMode[THR_MAX_INSTANCES];
@@ -169,8 +163,6 @@ ipAddr_t gCoapDestAddress;
 
 /* Application timer Id */
 tmrTimerID_t mAppTimerId = gTmrInvalidTimerID_c;
-
-tmrTimerID_t EverySecond_TimerId = gTmrInvalidTimerID_c;
 
 #if APP_AUTOSTART
 tmrTimerID_t tmrStartApp = gTmrInvalidTimerID_c;
@@ -190,8 +182,61 @@ Public functions
 \fn     void APP_Init(void)
 \brief  This function is used to initialize application.
 ***************************************************************************************************/
+tmrTimerID_t EverySecond_Timer_ID = gTmrInvalidTimerID_c;
+static void    MyTimer(void *);
+static uint8_t interfaceId;
+static uint8_t segundos = 1;
+static void MyTimer(void *pData)
+{
+   /* Just to avoid the compiler warning */
+  (void)pData;
+
+  TMR_StopTimer(EverySecond_Timer_ID);
+
+  /*if(segundos != 200){
+	  segundos ++;
+	  Serial_Print(interfaceId, " Valor del timer:   \n\r", gAllowToBlock_d);
+	  Serial_PrintDec(interfaceId, segundos);
+  }
+  else{
+	  segundos = 1;
+  }*/
+
+  coap_ask_time();
+  /*shell_writeN((char*) segundos, 1);
+  shell_write("aaaaaaa\r\n");
+  shell_write("\r\n");*/
+
+ /* Restart timer. */
+  TMR_StartSecondTimer(EverySecond_Timer_ID, 5 , MyTimer, NULL );
+}
+
 static void APP_CoapResource1Cb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapResource2Cb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
+void coap_ask_time()
+{
+	  uint8_t pMySessionPayload[1]={segundos};
+	  static uint32_t pMyPayloadSize=1;
+	  coapSession_t *pMySession = NULL;
+	  pMySession = COAP_OpenSession(mAppCoapInstId);
+
+	  COAP_AddOptionToList(pMySession,COAP_URI_PATH_OPTION, APP_TEAM1_URI_PATH,SizeOfString(APP_TEAM1_URI_PATH));
+
+	   pMySession -> msgType=gCoapNonConfirmable_c;
+	   pMySession -> code= gCoapGET_c;
+	   pMySession -> pCallback =NULL;
+	   FLib_MemCpy(&pMySession->remoteAddrStorage,&gCoapDestAddress,sizeof(ipAddr_t));
+
+
+	   coapMsgTypesAndCodes_t coapMessageType = gCoapMsgTypeNonGet_c;
+	   COAP_Send(pMySession, coapMessageType, pMySessionPayload, pMyPayloadSize);
+	   //COAP_Send(pSession, coapMessageType, pMySessionPayload, pMyPayloadSize);
+	   //COAP_Send(pSession, coapMessageType, pTempString, ackPloadSize);
+	   shell_write("'NON' packet sent 'GET' with payload: ");
+	   shell_writeDec(*pMySessionPayload);
+	   shell_write("\r\n");
+	   //COAP_CloseSession(pSession);
+}
 
 static void APP_CoapResource1Cb
 (
@@ -201,19 +246,20 @@ coapSession_t *pSession,
 uint32_t dataLen
 )
 
-
 {
-  static uint8_t pMySessionPayload[3]={0x31,0x32,0x33};
-  static uint32_t pMyPayloadSize=3;
-  coapSession_t *pMySession = NULL;
-  pMySession = COAP_OpenSession(mAppCoapInstId);
-  COAP_AddOptionToList(pMySession,COAP_URI_PATH_OPTION, APP_RESOURCE2_URI_PATH,SizeOfString(APP_RESOURCE2_URI_PATH));
+	  uint8_t pMySessionPayload[1]={segundos};
+	  static uint32_t pMyPayloadSize=1;
+	  coapSession_t *pMySession = NULL;
+	  /*pMySession = COAP_OpenSession(mAppCoapInstId);
+
+	  COAP_AddOptionToList(pMySession,COAP_URI_PATH_OPTION, APP_RESOURCE1_URI_PATH,SizeOfString(APP_RESOURCE1_URI_PATH));*/
 
     if (gCoapConfirmable_c == pSession->msgType)
   {
     if (gCoapGET_c == pSession->code)
     {
       shell_write("'CON' packet received 'GET' with payload: ");
+
     }
     if (gCoapPOST_c == pSession->code)
     {
@@ -233,7 +279,23 @@ uint32_t dataLen
   {
     if (gCoapGET_c == pSession->code)
     {
-      shell_write("'NON' packet received 'GET' with payload: ");
+
+    	/*shell_write("'NON' packet received 'GET' with payload: ");
+
+ 	   pMySession -> msgType=gCoapNonConfirmable_c;
+ 	   pMySession -> code= gCoapPOST_c;
+ 	   pMySession -> pCallback =NULL;
+ 	   FLib_MemCpy(&pMySession->remoteAddrStorage,&gCoapDestAddress,sizeof(ipAddr_t));
+
+
+ 	   coapMsgTypesAndCodes_t coapMessageType = gCoapMsgTypeNonPost_c;
+ 	   COAP_Send(pMySession, coapMessageType, pMySessionPayload, pMyPayloadSize);
+ 	   //COAP_Send(pSession, coapMessageType, pMySessionPayload, pMyPayloadSize);
+ 	   //COAP_Send(pSession, coapMessageType, pTempString, ackPloadSize);
+ 	   shell_write("'NON' packet sent 'POST' with payload: ");
+ 	   shell_writeDec(*pMySessionPayload);
+ 	   shell_write("\r\n");*/
+
     }
     if (gCoapPOST_c == pSession->code)
     {
@@ -244,20 +306,45 @@ uint32_t dataLen
       shell_write("'NON' packet received 'PUT' with payload: ");
     }
   }
-  shell_writeN(pData, dataLen);
+  shell_writeDec(-1);
+  shell_writeDec(-7);
   shell_write("\r\n");
-  pMySession -> msgType=gCoapNonConfirmable_c;
-  pMySession -> code= gCoapPOST_c;
-  pMySession -> pCallback =NULL;
-  FLib_MemCpy(&pMySession->remoteAddrStorage,&gCoapDestAddress,sizeof(ipAddr_t));
+  shell_writeDec((int16_t)((pData[2]<<8) | pData[3]));
 
-  coapMsgTypesAndCodes_t coapMessageType = gCoapMsgTypeNonPost_c;
+  //shell_writeDec((pData[2]<<8) | pData[3]);
+  shell_write("\r\n");
+  shell_writeDec((int16_t)((pData[4]<<8) | pData[5]));
+
+  //shell_writeDec((pData[4]<<8) | pData[5]);
+  shell_write("\r\n");
+
+   /*pMySessionPayload[0]=0;
+   pMySessionPayload[1]=0;
+   uint16_t data=(xData & 0xFF);
+   pMySessionPayload[2]=(xData & 0xFF00)>>8;
+   pMySessionPayload[3]=data;
+    data=(yData & 0xFF);
+   pMySessionPayload[4]=(yData & 0xFF00)>>8;
+   pMySessionPayload[5]=data;*/
+
+
+  /*shell_writeHex(&(gCoapDestAddress.addr16[1]), 2);
+  shell_write(":");
+  shell_writeHex(&(gCoapDestAddress.addr32[1]), 4);
+  shell_write(":");
+  shell_writeHex(&(gCoapDestAddress.addr64[1]),  8);
+  shell_write(":");
+  shell_writeHex(&(gCoapDestAddress.addr8[1]),  1);
+  shell_write("\r\n");*/
+
+  /*coapMsgTypesAndCodes_t coapMessageType = gCoapMsgTypeNonPost_c;
   COAP_Send(pMySession, coapMessageType, pMySessionPayload, pMyPayloadSize);
   //COAP_Send(pSession, coapMessageType, pMySessionPayload, pMyPayloadSize);
   //COAP_Send(pSession, coapMessageType, pTempString, ackPloadSize);
   shell_write("'NON' packet sent 'POST' with payload: ");
   shell_writeN((char*) pMySessionPayload, pMyPayloadSize);
-  shell_write("\r\n");
+  shell_write("\r\n");*/
+  COAP_CloseSession(pSession);
 }
 
 static void APP_CoapResource2Cb
@@ -275,6 +362,7 @@ uint32_t dataLen
       shell_writeN(pData, dataLen);
       shell_write("\r\n");
   }
+  COAP_CloseSession(pSession);
 }
 
 void APP_Init
@@ -294,6 +382,8 @@ void APP_Init
 
     /* Initialize keyboard handler */
     pfAppKeyboardHandler = App_HandleKeyboard;
+
+    EverySecond_Timer_ID = TMR_AllocateTimer();
 
     /* Use one instance ID for application */
     mThrInstanceId = gThrDefaultInstanceId_c;
@@ -517,6 +607,7 @@ void APP_Commissioning_Handler
         case gThrEv_MeshCop_JoinerDiscoverySuccess_c:
             break;
         case gThrEv_MeshCop_JoinerDtlsSessionStarted_c:
+
             App_UpdateStateLeds(gDeviceState_JoiningOrAttaching_c);
             break;
         case gThrEv_MeshCop_JoinerDtlsError_c:
@@ -524,6 +615,8 @@ void APP_Commissioning_Handler
             App_UpdateStateLeds(gDeviceState_FactoryDefault_c);
             break;
         case gThrEv_MeshCop_JoinerAccepted_c:
+        	shell_write("joiner  \r\n");
+        	TMR_StartSecondTimer(EverySecond_Timer_ID, 5 , MyTimer, NULL );
             break;
 
         /* Commissioner Events(event set applies for all Commissioners: on-mesh, external, native) */
@@ -533,6 +626,7 @@ void APP_Commissioning_Handler
         {
             uint8_t aDefaultEui[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
             thrOctet32_t defaultPskD = THR_PSK_D;
+
 
             MESHCOP_AddExpectedJoiner(mThrInstanceId, aDefaultEui, defaultPskD.aStr, defaultPskD.length, TRUE);
             MESHCOP_SyncSteeringData(mThrInstanceId, gMeshcopEuiMaskAllFFs_c);
@@ -551,6 +645,9 @@ void APP_Commissioning_Handler
         case gThrEv_MeshCop_CommissionerJoinerDtlsError_c:
             break;
         case gThrEv_MeshCop_CommissionerJoinerAccepted_c:
+
+        	shell_write("commisioner  \r\n");
+        	//TMR_StartSecondTimer(EverySecond_Timer_ID, 1 , MyTimer, NULL );
             break;
         case gThrEv_MeshCop_CommissionerNwkDataSynced_c:
             break;
@@ -618,6 +715,7 @@ static void APP_ThrNwkJoin
     if(THR_NwkJoin(mThrInstanceId, THR_APP_JOIN_DISCOVERY_METHOD) != gThrStatus_Success_c)
     {
         /* User can treat join failure according to their application */
+
     }
 }
 
@@ -772,6 +870,7 @@ static void APP_AppModeHandleKeyboard
     {
         case gKBD_EventPB1_c:
             /* Data sink create */
+        	shell_write("lolo\r\n");
             (void)NWKU_SendMsg(APP_SendDataSinkCreate, NULL, mpAppThreadMsgQueue);
             break;
 #if gKBD_KeysCount_c > 1
@@ -944,6 +1043,7 @@ static void APP_CoapGenericCallback
         if(FLib_MemCmp(pSession->pUriPath->pUriPath, (coapUriPath_t *)&gAPP_TEMP_URI_PATH.pUriPath,
                        pSession->pUriPath->length))
         {
+
             (void)NWKU_SendMsg(APP_ReportTemp, NULL, mpAppThreadMsgQueue);
         }
     }
@@ -1476,32 +1576,6 @@ static void APP_CoapSinkCb
         /* Send CoAP ACK */
         COAP_Send(pSession, gCoapMsgTypeAckSuccessChanged_c, NULL, 0);
     }
-}
-
-
-/**************************************************************************************************
-*
-*
-*
-*************************************************************************************************/
-static void MyTimer(void *pData)
-{
-   /* Just to avoid the compiler warning */
-  (void)pData;
-
-  //TMR_StopTimer(EverySecond_Timer);
-
-  if(segundos != 200){
-	  segundos ++;
-	  Serial_Print(interfaceId, " Valor del timer:   \n\r", gAllowToBlock_d);
-	  Serial_PrintDec(interfaceId, segundos);
-  }
-  else{
-	  segundos = 1;
-  }
-
- /* Restart timer. */
-  //TMR_StartSecondTimer(EverySecond_Timer, 1 , MyTimer, NULL );
 }
 
 /*!*************************************************************************************************
